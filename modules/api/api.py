@@ -217,12 +217,17 @@ class Api:
         if populate.sampler_name:
             populate.sampler_index = None  # prevent a warning later on
         p = StableDiffusionProcessingTxt2Img(**vars(populate))
-        p.scripts = scripts.scripts_txt2img
+        scripts.scripts_txt2img.initialize_scripts(False)
+        # p.scripts = scripts.scripts_txt2img
         # x_type, x_values, y_type, y_values, draw_legend, include_lone_images, no_fixed_seeds
-        p.script_args = [3, 8, 'DDIM, Euler a', 1, '-1, -1', True, False, False]
+        script_args = [3, 8, 'DDIM, Euler a', 1, '-1, -1', True, False, False]
+        scripts.scripts_txt2img.selectable_scripts[2].args_from = 1
+        scripts.scripts_txt2img.selectable_scripts[2].args_to = 9
+        # return ScriptResponse(images=[])
         shared.state.begin()
         with self.queue_lock:
-            processed = process_images(p)
+            processed = scripts.scripts_txt2img.run(p, *script_args)
+            # processed = process_images(p)
         shared.state.end()
         b64images = list(map(encode_pil_to_base64, processed.images))
         return ScriptResponse(images=b64images)
