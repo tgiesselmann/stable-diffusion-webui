@@ -175,7 +175,7 @@ class InterrogateRequest(BaseModel):
 class InterrogateResponse(BaseModel):
     caption: str = Field(default=None, title="Caption", description="The generated caption for the image.")
 
-class ScriptResponse(BaseModel):
+class TextToImageScriptResponse(BaseModel):
     images: List[str] = Field(title="Images", description="The generated images in base64 format.")
 
 fields = {}

@@ -76,7 +76,9 @@ class Api:
         self.app = app
         self.queue_lock = queue_lock
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
+        self.add_api_route("/sdapi/v1/txt2img/script", self.text2imgscriptapi, methods=["POST"], response_model=TextToImageScriptResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=ImageToImageResponse)
+        # self.add_api_route("/sdapi/v1/img2img/script", self.text2imgscriptapi, methods=["POST"], response_model=ImageToImageScriptResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=ExtrasSingleImageResponse)
         self.add_api_route("/sdapi/v1/extra-batch-images", self.extras_batch_images_api, methods=["POST"], response_model=ExtrasBatchImagesResponse)
         self.add_api_route("/sdapi/v1/png-info", self.pnginfoapi, methods=["POST"], response_model=PNGInfoResponse)
@@ -96,7 +98,6 @@ class Api:
         self.add_api_route("/sdapi/v1/prompt-styles", self.get_promp_styles, methods=["GET"], response_model=List[PromptStyleItem])
         self.add_api_route("/sdapi/v1/artist-categories", self.get_artists_categories, methods=["GET"], response_model=List[str])
         self.add_api_route("/sdapi/v1/artists", self.get_artists, methods=["GET"], response_model=List[ArtistItem])
-        self.add_api_route("/sdapi/v1/scripts", self.scriptapi, methods=["POST"], response_model=ScriptResponse)
 
     def add_api_route(self, path: str, endpoint, **kwargs):
         if shared.cmd_opts.api_auth:
@@ -206,7 +207,7 @@ class Api:
 
         return ExtrasBatchImagesResponse(images=list(map(encode_pil_to_base64, result[0])), html_info=result[1])
 
-    def scriptapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
+    def text2imgscriptapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
         populate = txt2imgreq.copy(update={ # Override __init__ params
             "sd_model": shared.sd_model,
             "sampler_name": validate_sampler_name(txt2imgreq.sampler_name or txt2imgreq.sampler_index),
@@ -217,10 +218,11 @@ class Api:
         if populate.sampler_name:
             populate.sampler_index = None  # prevent a warning later on
         p = StableDiffusionProcessingTxt2Img(**vars(populate))
+        p.outpath_samples = opts.outdir_txt2img_samples
+        p.outpath_grids = opts.outdir_txt2img_grids
         scripts.scripts_txt2img.initialize_scripts(False)
-        # p.scripts = scripts.scripts_txt2img
         # x_type, x_values, y_type, y_values, draw_legend, include_lone_images, no_fixed_seeds
-        script_args = [3, 8, 'DDIM, Euler a', 1, '-1, -1', True, False, False]
+        script_args = [3, 8, 'DDIM, Euler a', 1, '-1', True, True, False]
         scripts.scripts_txt2img.selectable_scripts[2].args_from = 1
         scripts.scripts_txt2img.selectable_scripts[2].args_to = 9
         # return ScriptResponse(images=[])
@@ -230,7 +232,7 @@ class Api:
             # processed = process_images(p)
         shared.state.end()
         b64images = list(map(encode_pil_to_base64, processed.images))
-        return ScriptResponse(images=b64images)
+        return TextToImageScriptResponse(images=b64images)
 
     def pnginfoapi(self, req: PNGInfoRequest):
         if(not req.image.strip()):
