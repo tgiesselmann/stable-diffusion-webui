@@ -121,7 +121,8 @@ class Api:
         )
         if populate.sampler_name:
             populate.sampler_index = None  # prevent a warning later on
-        p = StableDiffusionProcessingTxt2Img(**vars(populate))
+        
+        p = StableDiffusionTxt2ImgScriptProcessing(**vars(populate))
         # Override object param
 
         shared.state.begin()
@@ -207,28 +208,43 @@ class Api:
 
         return ExtrasBatchImagesResponse(images=list(map(encode_pil_to_base64, result[0])), html_info=result[1])
 
-    def text2imgscriptapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
-        populate = txt2imgreq.copy(update={ # Override __init__ params
+    def text2imgscriptapi(self, txt2imgscriptreq: StableDiffusionTxt2ImgScriptProcessingAPI):
+        populate = txt2imgscriptreq.copy(update={ # Override __init__ params
             "sd_model": shared.sd_model,
-            "sampler_name": validate_sampler_name(txt2imgreq.sampler_name or txt2imgreq.sampler_index),
-            "do_not_save_samples": True,
+            "sampler_name": validate_sampler_name(txt2imgscriptreq.sampler_name or txt2imgscriptreq.sampler_index),
+            "do_not_save_samples": False, # !!! TODO yay nay?
             "do_not_save_grid": True
             }
         )
         if populate.sampler_name:
             populate.sampler_index = None  # prevent a warning later on
-        p = StableDiffusionProcessingTxt2Img(**vars(populate))
-        p.outpath_samples = opts.outdir_txt2img_samples
-        p.outpath_grids = opts.outdir_txt2img_grids
+        
+        # Init scripting env
         scripts.scripts_txt2img.initialize_scripts(False)
-        # x_type, x_values, y_type, y_values, draw_legend, include_lone_images, no_fixed_seeds
-        script_args = [3, 8, 'DDIM, Euler a', 1, '-1', True, True, False]
-        scripts.scripts_txt2img.selectable_scripts[2].args_from = 1
-        scripts.scripts_txt2img.selectable_scripts[2].args_to = 9
-        # return ScriptResponse(images=[])
+
+        p = StableDiffusionTxt2ImgScriptProcessing(**vars(populate))
+        p.outpath_grids = opts.outdir_txt2img_grids
+        p.outpath_samples = opts.outdir_txt2img_samples
+        
+        # Map script name to local script idx
+        script_idx = -1
+        for i, script in enumerate(scripts.scripts_txt2img.selectable_scripts):
+            if script.title() == p.script_name:
+                script_idx = i
+                break
+
+        if script_idx == -1:
+            raise Exception('Script not found')
+
+        # ScriptRunner needs to know where the script args are
+        scripts.scripts_txt2img.selectable_scripts[script_idx].args_from = 1
+        scripts.scripts_txt2img.selectable_scripts[script_idx].args_to = len(p.script_args) + 1
+        
+        return TextToImageScriptResponse(images=[])
+        
         shared.state.begin()
         with self.queue_lock:
-            processed = scripts.scripts_txt2img.run(p, *script_args)
+            processed = scripts.scripts_txt2img.run(p, p.script_args)
             # processed = process_images(p)
         shared.state.end()
         b64images = list(map(encode_pil_to_base64, processed.images))

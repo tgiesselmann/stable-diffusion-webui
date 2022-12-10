@@ -103,6 +103,43 @@ StableDiffusionTxt2ImgProcessingAPI = PydanticModelGenerator(
     [{"key": "sampler_index", "type": str, "default": "Euler"}]
 ).generate_model()
 
+class StableDiffusionTxt2ImgScriptProcessing(StableDiffusionProcessingTxt2Img):
+    # script_name: Optional[str] = Field(max_length="100")
+    # script_args: Optional[list] = Field(default=[])
+    script_name = ''
+    script_args = []
+    
+    # def __init__(self, enable_hr: bool=False, denoising_strength: float=0.75, firstphase_width: int=0, firstphase_height: int=0, **kwargs):
+    # def __init__(self, **kwargs):
+    def __init__(self, enable_hr: bool=False, denoising_strength: float=0.75, firstphase_width: int=0, firstphase_height: int=0, **kwargs):
+        super().__init__(**kwargs)
+        self.script_name = kwargs['script_name']
+        self.script_args = kwargs['script_args']
+
+StableDiffusionTxt2ImgScriptProcessingAPI = PydanticModelGenerator(
+    "StableDiffusionTxt2ImgScriptProcessingAPI",
+    StableDiffusionTxt2ImgScriptProcessing,
+    [{"key": "sampler_index", "type": str, "default": "Euler"},
+     {"key": "script_name", "type": str, "default": ""},
+     {"key": "script_args", "type": list, "default": []}
+     ]
+).generate_model()
+
+class TextToImageScriptResponse(BaseModel):
+    images: List[str] = Field(title="Images", description="The generated images in base64 format.")
+
+# TextToImageScriptResponseAPI = PydanticModelGenerator(
+#     "TextToImageScriptResponseAPI",
+#     TextToImageScriptResponse,
+#     [{"key": "sampler_index", "type": str, "default": "Euler"}, {"key": "init_images", "type": list, "default": None}, {"key": "denoising_strength", "type": float, "default": 0.75}, {"key": "mask", "type": str, "default": None}, {"key": "include_init_images", "type": bool, "default": False, "exclude" : True}]
+# ).generate_model()
+
+# StableDiffusionTxt2ImgScriptProcessingAPI = PydanticModelGenerator(
+#     "TextToImageScriptResponseAPI",
+#     StableDiffusionScriptProcessingImg2Img,
+#     [{"key": "sampler_index", "type": str, "default": "Euler"}, {"key": "init_images", "type": list, "default": None}, {"key": "denoising_strength", "type": float, "default": 0.75}, {"key": "mask", "type": str, "default": None}, {"key": "include_init_images", "type": bool, "default": False, "exclude" : True}]
+# ).generate_model()
+
 StableDiffusionImg2ImgProcessingAPI = PydanticModelGenerator(
     "StableDiffusionProcessingImg2Img",
     StableDiffusionProcessingImg2Img,
@@ -175,8 +212,6 @@ class InterrogateRequest(BaseModel):
 class InterrogateResponse(BaseModel):
     caption: str = Field(default=None, title="Caption", description="The generated caption for the image.")
 
-class TextToImageScriptResponse(BaseModel):
-    images: List[str] = Field(title="Images", description="The generated images in base64 format.")
 
 fields = {}
 for key, metadata in opts.data_labels.items():
