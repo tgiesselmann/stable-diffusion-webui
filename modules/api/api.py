@@ -78,7 +78,7 @@ class Api:
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=TextToImageResponse)
         self.add_api_route("/sdapi/v1/txt2img/script", self.text2img_script_api, methods=["POST"], response_model=TextToImageScriptResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=ImageToImageResponse)
-        # self.add_api_route("/sdapi/v1/img2img/script", self.text2imgscriptapi, methods=["POST"], response_model=ImageToImageScriptResponse)
+        self.add_api_route("/sdapi/v1/img2img/script", self.img2img_script_api, methods=["POST"], response_model=ImageToImageScriptResponse)
         self.add_api_route("/sdapi/v1/extra-single-image", self.extras_single_image_api, methods=["POST"], response_model=ExtrasSingleImageResponse)
         self.add_api_route("/sdapi/v1/extra-batch-images", self.extras_batch_images_api, methods=["POST"], response_model=ExtrasBatchImagesResponse)
         self.add_api_route("/sdapi/v1/png-info", self.pnginfoapi, methods=["POST"], response_model=PNGInfoResponse)
@@ -181,7 +181,7 @@ class Api:
             img2imgreq.mask = None
 
         return ImageToImageResponse(images=b64images, parameters=vars(img2imgreq), info=processed.js())
-
+    
     def extras_single_image_api(self, req: ExtrasSingleImageRequest):
         reqDict = setUpscalers(req)
 
@@ -236,15 +236,67 @@ class Api:
             overridden_txt2img_script_req.sampler_index = None  # prevent a warning later on
         p = StableDiffusionTxt2ImgScriptProcessing(**vars(overridden_txt2img_script_req))
         
-        # return TextToImageScriptResponse(images=[])
-        
         shared.state.begin()
         with self.queue_lock:
             processed = scripts.scripts_txt2img.run(p, *p.script_args)
         shared.state.end()
-
         b64images = list(map(encode_pil_to_base64, processed.images))
         return TextToImageScriptResponse(images=b64images)
+
+    def img2img_script_api(self, img2img_script_req: StableDiffusionImg2ImgScriptProcessingAPI):
+        if scripts.scripts_img2img.scripts == []:
+            scripts.scripts_img2img.initialize_scripts(True)
+        
+        # Find script_idx by name and make sure ScriptRunner knows where the script args are
+        script_idx = -1
+        for i, script in enumerate(scripts.scripts_img2img.selectable_scripts):
+            if script.title() == img2img_script_req.script_name:
+                scripts.scripts_img2img.selectable_scripts[i].args_from = 1
+                scripts.scripts_img2img.selectable_scripts[i].args_to = len(img2img_script_req.script_args) + 1
+                script_idx = i + 1
+                break
+        if script_idx == -1:
+            raise HTTPException(status_code=422, detail='Script "' + img2img_script_req.script_name + '" not found')
+
+        mask = img2img_script_req.mask
+        if mask:
+            mask = decode_base64_to_image(mask)
+
+        # Configure processing request
+        overridden_img2img_script_req = img2img_script_req.copy(update={
+                "sd_model": shared.sd_model,
+                "sampler_name": validate_sampler_name(img2img_script_req.sampler_name or img2img_script_req.sampler_index),
+                "do_not_save_samples": False,
+                "do_not_save_grid": False,
+                "mask": mask,
+                "outpath_grids": opts.outdir_img2img_grids,
+                "outpath_samples": opts.outdir_img2img_samples,
+                "script_args": [script_idx] + img2img_script_req.script_args})
+        if overridden_img2img_script_req.sampler_name:
+            overridden_img2img_script_req.sampler_index = None  # prevent a warning later on
+        
+        args = vars(overridden_img2img_script_req)
+        args.pop('include_init_images', None)
+        p = StableDiffusionImg2ImgScriptProcessing(**args)
+        # p.init_images = map(decode_base64_to_image, img2img_script_req.init_images)
+        
+        imgs = []
+        for img in img2img_script_req.init_images:
+            img = decode_base64_to_image(img)
+            imgs = [img] * p.batch_size
+        p.init_images = imgs
+
+        shared.state.begin()
+        with self.queue_lock:
+            processed = scripts.scripts_img2img.run(p, *p.script_args)
+        shared.state.end()
+        b64images = list(map(encode_pil_to_base64, processed.images))
+
+        if not img2img_script_req.include_init_images:
+            img2img_script_req.init_images = None
+            img2img_script_req.mask = None
+
+        return ImageToImageScriptResponse(images=b64images)
 
     def pnginfoapi(self, req: PNGInfoRequest):
         if(not req.image.strip()):
