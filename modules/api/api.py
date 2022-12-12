@@ -278,7 +278,6 @@ class Api:
         args = vars(overridden_img2img_script_req)
         args.pop('include_init_images', None)
         p = StableDiffusionImg2ImgScriptProcessing(**args)
-        # p.init_images = map(decode_base64_to_image, img2img_script_req.init_images)
         
         imgs = []
         for img in img2img_script_req.init_images:
