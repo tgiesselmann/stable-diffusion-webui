@@ -25,6 +25,11 @@ def upscaler_to_index(name: str):
     except:
         raise HTTPException(status_code=400, detail=f"Invalid upscaler, needs to be on of these: {' , '.join([x.name for x in sd_upscalers])}")
 
+def script_name_to_index(name, scripts):
+    try:
+        return [script.title().lower() for script in scripts].index(name.lower())
+    except:
+        raise HTTPException(status_code=422, detail=f"Script '{name}' not found")
 
 def validate_sampler_name(name):
     config = sd_samplers.all_samplers_map.get(name, None)
@@ -212,16 +217,12 @@ class Api:
         if scripts.scripts_txt2img.scripts == []:
             scripts.scripts_txt2img.initialize_scripts(False)
         
-        # Find script_idx by name and make sure ScriptRunner knows where the script args are
-        script_idx = -1
-        for i, script in enumerate(scripts.scripts_txt2img.selectable_scripts):
-            if script.title() == txt2img_script_req.script_name:
-                scripts.scripts_txt2img.selectable_scripts[i].args_from = 1
-                scripts.scripts_txt2img.selectable_scripts[i].args_to = len(txt2img_script_req.script_args) + 1
-                script_idx = i + 1
-                break
-        if script_idx == -1:
-            raise Exception('Script not found')
+        # ScriptRunner knows where the script args are
+        scripts = scripts.scripts_txt2img.selectable_scripts
+        script_idx = script_name_to_index(txt2img_script_req.script_name, scripts)
+        if not scripts[script_idx].args_from:
+            scripts[script_idx].args_from = 1
+            scripts[script_idx].args_to = len(txt2img_script_req.script_args) + 1
 
         # Configure processing request
         overridden_txt2img_script_req = txt2img_script_req.copy(update={
@@ -231,7 +232,7 @@ class Api:
                 "do_not_save_grid": False,
                 "outpath_grids": opts.outdir_txt2img_grids,
                 "outpath_samples": opts.outdir_txt2img_samples,
-                "script_args": [script_idx] + txt2img_script_req.script_args})
+                "script_args": [script_idx + 1] + txt2img_script_req.script_args})
         if overridden_txt2img_script_req.sampler_name:
             overridden_txt2img_script_req.sampler_index = None  # prevent a warning later on
         p = StableDiffusionTxt2ImgScriptProcessing(**vars(overridden_txt2img_script_req))
@@ -247,20 +248,12 @@ class Api:
         if scripts.scripts_img2img.scripts == []:
             scripts.scripts_img2img.initialize_scripts(True)
         
-        # Find script_idx by name and make sure ScriptRunner knows where the script args are
-        script_idx = -1
-        for i, script in enumerate(scripts.scripts_img2img.selectable_scripts):
-            if script.title() == img2img_script_req.script_name:
-                scripts.scripts_img2img.selectable_scripts[i].args_from = 1
-                scripts.scripts_img2img.selectable_scripts[i].args_to = len(img2img_script_req.script_args) + 1
-                script_idx = i + 1
-                break
-        if script_idx == -1:
-            raise HTTPException(status_code=422, detail='Script "' + img2img_script_req.script_name + '" not found')
-
-        mask = img2img_script_req.mask
-        if mask:
-            mask = decode_base64_to_image(mask)
+        # ScriptRunner knows where the script args are
+        scripts = scripts.scripts_img2img.selectable_scripts
+        script_idx = script_name_to_index(img2img_script_req.script_name, scripts)
+        if not scripts[script_idx].args_from:
+            scripts[script_idx].args_from = 1
+            scripts[script_idx].args_to = len(img2img_script_req.script_args) + 1
 
         # Configure processing request
         overridden_img2img_script_req = img2img_script_req.copy(update={
@@ -268,10 +261,10 @@ class Api:
                 "sampler_name": validate_sampler_name(img2img_script_req.sampler_name or img2img_script_req.sampler_index),
                 "do_not_save_samples": False,
                 "do_not_save_grid": False,
-                "mask": mask,
+                "mask": decode_base64_to_image(img2img_script_req.mask) if img2img_script_req.mask else None,
                 "outpath_grids": opts.outdir_img2img_grids,
                 "outpath_samples": opts.outdir_img2img_samples,
-                "script_args": [script_idx] + img2img_script_req.script_args})
+                "script_args": [script_idx + 1] + img2img_script_req.script_args})
         if overridden_img2img_script_req.sampler_name:
             overridden_img2img_script_req.sampler_index = None  # prevent a warning later on
         
