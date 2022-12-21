@@ -10,7 +10,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from secrets import compare_digest
 
 import modules.shared as shared
-from modules import sd_samplers, deepbooru, scripts
+from modules import sd_samplers, deepbooru, scripts, ui
 from modules.api.models import *
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, process_images
 from modules.extras import run_extras, run_pnginfo
@@ -214,16 +214,11 @@ class Api:
         return ExtrasBatchImagesResponse(images=list(map(encode_pil_to_base64, result[0])), html_info=result[1])
 
     def text2img_script_api(self, txt2img_script_req: StableDiffusionTxt2ImgScriptProcessingAPI):
+        # Initialize scripts (if necessary)
         if scripts.scripts_txt2img.scripts == []:
             scripts.scripts_txt2img.initialize_scripts(False)
+            ui.create_ui()
         
-        # ScriptRunner knows where the script args are
-        scripts = scripts.scripts_txt2img.selectable_scripts
-        script_idx = script_name_to_index(txt2img_script_req.script_name, scripts)
-        if not scripts[script_idx].args_from:
-            scripts[script_idx].args_from = 1
-            scripts[script_idx].args_to = len(txt2img_script_req.script_args) + 1
-
         # Configure processing request
         overridden_txt2img_script_req = txt2img_script_req.copy(update={
                 "sd_model": shared.sd_model,
@@ -231,12 +226,15 @@ class Api:
                 "do_not_save_samples": False,
                 "do_not_save_grid": False,
                 "outpath_grids": opts.outdir_txt2img_grids,
-                "outpath_samples": opts.outdir_txt2img_samples,
-                "script_args": [script_idx + 1] + txt2img_script_req.script_args})
+                "outpath_samples": opts.outdir_txt2img_samples,})
         if overridden_txt2img_script_req.sampler_name:
             overridden_txt2img_script_req.sampler_index = None  # prevent a warning later on
         p = StableDiffusionTxt2ImgScriptProcessing(**vars(overridden_txt2img_script_req))
-        
+        script_idx = script_name_to_index(txt2img_script_req.script_name, scripts.scripts_txt2img.selectable_scripts)
+        script = scripts.scripts_txt2img.selectable_scripts[script_idx]
+        p.script_args = [script_idx + 1] + [None] * (script.args_from - 1) + p.script_args
+
+        # Run script
         shared.state.begin()
         with self.queue_lock:
             processed = scripts.scripts_txt2img.run(p, *p.script_args)
@@ -245,16 +243,11 @@ class Api:
         return TextToImageScriptResponse(images=b64images)
 
     def img2img_script_api(self, img2img_script_req: StableDiffusionImg2ImgScriptProcessingAPI):
+        # Initialize scripts (if necessary)
         if scripts.scripts_img2img.scripts == []:
             scripts.scripts_img2img.initialize_scripts(True)
+            ui.create_ui()
         
-        # ScriptRunner knows where the script args are
-        scripts = scripts.scripts_img2img.selectable_scripts
-        script_idx = script_name_to_index(img2img_script_req.script_name, scripts)
-        if not scripts[script_idx].args_from:
-            scripts[script_idx].args_from = 1
-            scripts[script_idx].args_to = len(img2img_script_req.script_args) + 1
-
         # Configure processing request
         overridden_img2img_script_req = img2img_script_req.copy(update={
                 "sd_model": shared.sd_model,
@@ -263,21 +256,22 @@ class Api:
                 "do_not_save_grid": False,
                 "mask": decode_base64_to_image(img2img_script_req.mask) if img2img_script_req.mask else None,
                 "outpath_grids": opts.outdir_img2img_grids,
-                "outpath_samples": opts.outdir_img2img_samples,
-                "script_args": [script_idx + 1] + img2img_script_req.script_args})
+                "outpath_samples": opts.outdir_img2img_samples,})
         if overridden_img2img_script_req.sampler_name:
             overridden_img2img_script_req.sampler_index = None  # prevent a warning later on
-        
         args = vars(overridden_img2img_script_req)
         args.pop('include_init_images', None)
         p = StableDiffusionImg2ImgScriptProcessing(**args)
-        
+        script_idx = script_name_to_index(img2img_script_req.script_name, scripts.scripts_img2img.selectable_scripts)
+        script = scripts.scripts_img2img.selectable_scripts[script_idx]
+        p.script_args = [script_idx + 1] + [None] * (script.args_from - 1) + p.script_args
         imgs = []
         for img in img2img_script_req.init_images:
             img = decode_base64_to_image(img)
             imgs = [img] * p.batch_size
         p.init_images = imgs
 
+        # Run script
         shared.state.begin()
         with self.queue_lock:
             processed = scripts.scripts_img2img.run(p, *p.script_args)
