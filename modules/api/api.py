@@ -51,6 +51,8 @@ def decode_base64_to_image(encoding):
         encoding = encoding.split(";")[1].split(",")[1]
     return Image.open(BytesIO(base64.b64decode(encoding)))
 
+import hashlib
+
 def encode_pil_to_base64(image):
     with io.BytesIO() as output_bytes:
 
@@ -62,11 +64,15 @@ def encode_pil_to_base64(image):
                 metadata.add_text(key, value)
                 use_metadata = True
 
+        print('imginfo: ' + image.info.get('parameters', ''))
         image.save(
             output_bytes, "PNG", pnginfo=(metadata if use_metadata else None)
         )
         bytes_data = output_bytes.getvalue()
-    return base64.b64encode(bytes_data)
+        print(">>>>>>> hraw: " + str(hashlib.sha256(bytes_data).hexdigest()))
+        bytes_enc = base64.b64encode(bytes_data)
+        print(">>>>>>> henc: " + str(hashlib.sha256(bytes_enc).hexdigest()))
+    return bytes_enc
 
 
 class Api:
@@ -271,6 +277,7 @@ class Api:
         with self.queue_lock:
             processed = scripts.scripts_img2img.run(p, *p.script_args)
         shared.state.end()
+        print('GAAARF============================================================')
         b64images = list(map(encode_pil_to_base64, processed.images))
 
         if not img2img_script_req.include_init_images:

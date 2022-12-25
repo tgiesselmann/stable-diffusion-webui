@@ -513,6 +513,7 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
                 for k, v in params.pnginfo.items():
                     pnginfo_data.add_text(k, str(v))
 
+            print(temp_file_path)
             image_to_save.save(temp_file_path, format=image_format, quality=opts.jpeg_quality, pnginfo=pnginfo_data)
 
         elif extension.lower() in (".jpg", ".jpeg", ".webp"):
@@ -530,6 +531,7 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
             image_to_save.save(temp_file_path, format=image_format, quality=opts.jpeg_quality)
 
         # atomically rename the file with correct extension
+        print(temp_file_path + ' ==> ' + filename_without_extension + extension)
         os.replace(temp_file_path, filename_without_extension + extension)
 
     fullfn_without_extension, extension = os.path.splitext(params.filename)
