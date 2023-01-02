@@ -277,8 +277,14 @@ class Api:
         with self.queue_lock:
             processed = scripts.scripts_img2img.run(p, *p.script_args)
         shared.state.end()
-        print('GAAARF============================================================')
-        b64images = list(map(encode_pil_to_base64, processed.images))
+        print('====================================================================================')
+        # b64images = list(map(encode_pil_to_base64, processed.images))
+        idx = 0
+        b64images = []
+        for img in processed.images:
+            print(idx)
+            idx = idx + 1
+            b64images.append(encode_pil_to_base64(img))
 
         if not img2img_script_req.include_init_images:
             img2img_script_req.init_images = None
